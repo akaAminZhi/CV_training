@@ -7,7 +7,7 @@ import fitz
 from ultralytics import YOLO
 
 # MODEL = YOLO("./lsbyolo11.pt")
-MODEL = YOLO("weights/telecom_yolo11.pt")
+MODEL = YOLO("weights/lsb_telecom_v9.pt")
 input = "TestFiles/Test_telecom_all.pdf"
 output = "TestFiles/Test_telecom_all_result4.pdf"
 

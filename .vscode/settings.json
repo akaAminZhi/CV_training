@@ -1,0 +1,9 @@
+{
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+      },
+    "flake8.args": [
+    "--ignore=E501,E203,E226",
+  ], 
+}
