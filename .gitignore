@@ -1,6 +1,7 @@
 LSB*
 *.png
 *.jpg
+*.pt
 pdf_files
 runs
 TestFiles

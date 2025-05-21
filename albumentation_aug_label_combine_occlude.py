@@ -7,8 +7,8 @@ import random
 # --- Paths ---
 image_input_dir = "dataset/for_testv1yolov11/train/images"
 label_input_dir = "dataset/for_testv1yolov11/train/labels"
-image_output_dir = "dataset/for_testv1yolov11/train_center_aug/images"
-label_output_dir = "dataset/for_testv1yolov11/train_center_aug/labels"
+image_output_dir = "dataset/for_testv1yolov11/train_aug/images"
+label_output_dir = "dataset/for_testv1yolov11/train_aug/labels"
 os.makedirs(image_output_dir, exist_ok=True)
 os.makedirs(label_output_dir, exist_ok=True)
 
@@ -74,12 +74,12 @@ def make_box_dropout(bbox_labels):
     1-3 holes inside *each* bounding box whose label is in `bbox_labels`.
     """
     return A.ConstrainedCoarseDropout(
-        num_holes_range=(1, 3),  # 1–3 holes per matching box
-        hole_height_range=(0.25, 0.5),  # 25–50 % of the box height
-        hole_width_range=(0.25, 0.5),  # 25–50 % of the box width
+        num_holes_range=(2, 3),  # 2–3 holes per matching box
+        hole_height_range=(0.2, 0.3),  # 25–50 % of the box height
+        hole_width_range=(0.2, 0.3),  # 25–50 % of the box width
         fill="random_uniform",  # solid random colour per hole
         bbox_labels=bbox_labels,  # <-- key line
-        p=0.5,
+        p=0.3,
     )
 
 
@@ -122,7 +122,7 @@ for img_path in glob.glob(os.path.join(image_input_dir, "*.jpg")):
     if not boxes:
         continue
 
-    for idx in range(4):  # ← exactly eight
+    for idx in range(5):  # ← exactly eight
         # pipe, combo = build_random_pipeline()
         pipe, combo = build_random_pipeline(class_ids)
         tr = pipe(image=img, bboxes=boxes, class_labels=class_ids)
