@@ -7,13 +7,15 @@ import fitz
 from ultralytics import YOLO
 
 # MODEL = YOLO("./lsbyolo11.pt")
-MODEL = YOLO("weights/lsb_telecom_v9.pt")
-input = "TestFiles/Test_telecom_all.pdf"
-output = "TestFiles/Test_telecom_all_result4.pdf"
+# MODEL = YOLO("weights/receptale_yolo11_fine-tunr_v8.pt")
+MODEL = YOLO("runs/detect/LSB_receptacle_v1_from_yolov11m/weights/best.pt")
+
+input = "TestFiles/receptacle_all.pdf"
+output = "TestFiles/receptacle_all_result_with_yolov11m_v10.pdf"
 
 TILE = 512
 STRIDE = 512  # = TILE for no-overlap; any ≥1 for approach B
-CONF_THR = 0.5
+CONF_THR = 0.6
 
 
 def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=300):
@@ -114,8 +116,21 @@ def detect_page_B(img):
             y2 = min(y0 + TILE + PAD, H)
             patch = img[y1:y2, x1:x2]
             offx, offy = x1, y1
+            """
+            假设模型在一张图像中检测到了两个框，一个是“人”，另一个是“狗”，但它们重叠很多：
 
-            for r in MODEL.predict(patch, conf=CONF_THR, verbose=False):
+            如果 agnostic_nms=False:因为“人”和“狗”是不同类别, 两个框都会保留。
+
+            如果 agnostic_nms=True:如果它们的重叠度超过 iou 阈值，比如 0.5, 就会只保留置信度高的那个框，另一个会被去掉。
+
+            """
+            for r in MODEL.predict(
+                patch,
+                conf=CONF_THR,
+                verbose=False,
+                iou=0.3,
+                agnostic_nms=True,
+            ):
                 for box in r.boxes:
                     bx1, by1, bx2, by2 = box.xyxy[0].tolist()
                     cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
