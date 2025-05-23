@@ -29,13 +29,13 @@ def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=300):
         imat = fitz.Matrix(mat)
         imat.invert()  # 2️⃣ invert matrix png->PDF
         for det in detections_pp[i]:
-            p1 = fitz.Point(det["x1"], det["y1"]) * imat
-            p2 = fitz.Point(det["x2"], det["y2"]) * imat
-            rect = fitz.Rect(p1, p2)
-
             # p1 = fitz.Point(det["x1"], det["y1"]) * imat
             # p2 = fitz.Point(det["x2"], det["y2"]) * imat
-            # rect = fitz.Rect(p1, p2).normalize()
+            # rect = fitz.Rect(p1, p2)
+
+            p1 = fitz.Point(det["x1"], det["y1"]) * imat
+            p2 = fitz.Point(det["x2"], det["y2"]) * imat
+            rect = fitz.Rect(p1, p2).normalize()
 
             # skip zero-area boxes
             if rect.width == 0 or rect.height == 0:
