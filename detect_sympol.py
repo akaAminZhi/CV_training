@@ -7,11 +7,11 @@ import fitz
 from ultralytics import YOLO
 
 # MODEL = YOLO("./lsbyolo11.pt")
-# MODEL = YOLO("weights/receptale_yolo11_fine-tunr_v8.pt")
-MODEL = YOLO("runs/detect/LSB_receptacle_v1_from_yolov11m/weights/best.pt")
+MODEL = YOLO("weights/receptale_yolo11m.pt")
+# MODEL = YOLO("runs/detect/LSB_receptacle_v1_from_yolov11m/weights/best.pt")
 
-input = "TestFiles/receptacle_all.pdf"
-output = "TestFiles/receptacle_all_result_with_yolov11m_v10.pdf"
+input = "TestFiles/receptacle_all_CMSC_page3.pdf"
+output = "TestFiles/receptacle_all_CMSC_page3_result_with_YOLO11_m.pdf"
 
 TILE = 512
 STRIDE = 512  # = TILE for no-overlap; any ≥1 for approach B
@@ -32,7 +32,16 @@ def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=300):
             p1 = fitz.Point(det["x1"], det["y1"]) * imat
             p2 = fitz.Point(det["x2"], det["y2"]) * imat
             rect = fitz.Rect(p1, p2)
+
+            # p1 = fitz.Point(det["x1"], det["y1"]) * imat
+            # p2 = fitz.Point(det["x2"], det["y2"]) * imat
+            # rect = fitz.Rect(p1, p2).normalize()
+
+            # skip zero-area boxes
+            if rect.width == 0 or rect.height == 0:
+                continue
             annot = page.add_rect_annot(rect)
+
             # Set the subject of the annotation
             annot.set_info(subject=f"{det['label']}")
             annot.set_colors(stroke=(1, 0, 0))  # 红色边框
@@ -149,6 +158,27 @@ def detect_page_B(img):
     return dets  # already unique → no NMS needed
 
 
+def draw_detections(img, detections):
+    for det in detections:
+        x1 = int(det["x1"])
+        y1 = int(det["y1"])
+        x2 = int(det["x2"])
+        y2 = int(det["y2"])
+
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(
+            img,
+            det["label"],
+            (x1, y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+    return img
+
+
 # ──────────────────────────────────────────────────────────────────────────
 #  FULL PIPELINE DRIVER
 # ──────────────────────────────────────────────────────────────────────────
@@ -166,6 +196,10 @@ def run(pdf_path, out_path, use_overlap=False):
             dets = nms(dets, thr=0.5)
         else:
             dets = detect_page_A(img)  # Approach A
+
+        # drawback to image
+        # result_img = draw_detections(img, dets)
+        # cv2.imwrite("detection_result" + str(i) + ".png", result_img)
 
         det_pp.append(dets)
         print(f"Page {i+1}/{len(doc)}: {len(dets)} boxes")
