@@ -5,10 +5,10 @@ import glob
 import random
 
 # --- Paths ---
-image_input_dir = "dataset/for_testv1yolov11/train/images"
-label_input_dir = "dataset/for_testv1yolov11/train/labels"
-image_output_dir = "dataset/for_testv1yolov11/train_aug/images"
-label_output_dir = "dataset/for_testv1yolov11/train_aug/labels"
+image_input_dir = "dataset/lsb_power_plan_receptacle_v6_yolov11/train/images"
+label_input_dir = "dataset/lsb_power_plan_receptacle_v6_yolov11/train/labels"
+image_output_dir = "dataset/lsb_power_plan_receptacle_v6_yolov11/train_aug/images"
+label_output_dir = "dataset/lsb_power_plan_receptacle_v6_yolov11/train_aug/labels"
 os.makedirs(image_output_dir, exist_ok=True)
 os.makedirs(label_output_dir, exist_ok=True)
 
@@ -52,6 +52,7 @@ def draw_boxes_on_image(image, boxes, class_ids, color=(0, 255, 0)):
 
 
 # ── 1. pool of *single* transforms ────────────────────────────────────────────
+
 tf_pool = {
     "blur": A.GaussianBlur(blur_limit=(3, 5), p=1.0),
     "bright": A.RandomBrightnessContrast(0, 0.15, p=1.0),
@@ -59,11 +60,35 @@ tf_pool = {
     "rotate": A.Rotate(
         limit=15, border_mode=cv2.BORDER_REFLECT_101, p=1.0
     ),  # picks –15 … +15°
-    "scale": A.Affine(scale=(0.9, 1.1), fit_output=True, p=1.0),
+    "scale": A.Affine(scale=(0.8, 1.2), fit_output=True, p=1.0),
+    "hflip": A.HorizontalFlip(p=1.0),
+    "vflip": A.VerticalFlip(p=1.0),
+    "rot90_left": A.Rotate(limit=(90, 90), border_mode=cv2.BORDER_REFLECT_101, p=1.0),
+    "rot90_right": A.Rotate(
+        limit=(-90, -90), border_mode=cv2.BORDER_REFLECT_101, p=1.0
+    ),
     "safe_crop": A.RandomSizedBBoxSafeCrop(512, 512, p=1.0),
     # "coarse_drop": A.CoarseDropout(
     #     max_holes=4, max_height=128, max_width=128, fill_value=(255, 0, 255), p=1.0
     # ),
+}
+tf_pool_1 = {
+    "blur": A.GaussianBlur(blur_limit=(3, 5), p=1.0),
+    "bright": A.RandomBrightnessContrast(0, 0.15, p=1.0),
+    "dark": A.RandomBrightnessContrast(-0.15, 0, p=1.0),
+    "scale": A.Affine(scale=(0.8, 1.2), fit_output=True, p=1.0),
+    "safe_crop": A.RandomSizedBBoxSafeCrop(512, 512, p=1.0),
+}
+
+
+tf_pool_rotate_flip = {
+    "rotate": A.Rotate(limit=15, border_mode=cv2.BORDER_REFLECT_101, p=1.0),
+    "hflip": A.HorizontalFlip(p=1.0),
+    "vflip": A.VerticalFlip(p=1.0),
+    "rot90_left": A.Rotate(limit=(90, 90), border_mode=cv2.BORDER_REFLECT_101, p=1.0),
+    "rot90_right": A.Rotate(
+        limit=(-90, -90), border_mode=cv2.BORDER_REFLECT_101, p=1.0
+    ),
 }
 
 
@@ -88,7 +113,9 @@ def build_random_pipeline(bbox_labels):
     Randomly pick 2-3 transforms from tf_pool **plus one** box-aware dropout.
     """
     n = random.randint(2, 3)
-    keys = random.sample(list(tf_pool.keys()), n)
+    keys = random.sample(list(tf_pool_1.keys()), n)
+    keys_rotate_flip = random.sample(list(tf_pool_rotate_flip.keys()), 1)
+    keys.extend(keys_rotate_flip)
     random.shuffle(keys)
 
     # standard transforms
@@ -103,7 +130,7 @@ def build_random_pipeline(bbox_labels):
             bbox_params=A.BboxParams(
                 format="yolo",
                 label_fields=["class_labels"],
-                min_visibility=0.0,  # keep boxes even if fully hidden
+                min_visibility=0.3,  # keep boxes even if fully hidden
             ),
         ),
         "_".join(keys) + "_cdrop",  # e.g. "rotate_scale_cdrop"
