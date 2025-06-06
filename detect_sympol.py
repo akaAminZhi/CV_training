@@ -5,16 +5,23 @@ import cv2
 import numpy as np
 import fitz
 from ultralytics import YOLO
+import torch
+from torchvision.ops import nms
 
 # MODEL = YOLO("./lsbyolo11.pt")
-MODEL = YOLO("weights/receptale_yolo11m.pt")
-# MODEL = YOLO("runs/detect/LSB_receptacle_v1_from_yolov11m/weights/best.pt")
+# MODEL = YOLO("weights/roboflow_yolo11m_fine_tune_weights_v1.pt")
+MODEL = YOLO(
+    "runs/detect/lsb_power_plan_receptacle_roboflow_v8_yolov11_m_fine_tune_unfreeze_all/weights/best.pt"
+)
 
-input = "TestFiles/receptacle_all_CMSC_page3.pdf"
-output = "TestFiles/receptacle_all_CMSC_page3_result_with_YOLO11_m.pdf"
+input = "TestFiles/Test2.pdf"
+output = "TestFiles/Test2_with_yolo11_m_fine_tune_v1.pdf"
 
 TILE = 512
-STRIDE = 512  # = TILE for no-overlap; any ≥1 for approach B
+# STRIDE = 512  # = TILE for no-overlap; any ≥1 for approach B
+
+PAD = TILE // 8  # 64 px on each side for 512-tile  ➜ 25 % extra pixels
+STRIDE = TILE - 2 * PAD  # 448 px  (perfect sliding window)
 CONF_THR = 0.6
 
 
@@ -67,7 +74,7 @@ def iou(b1, b2):
     return inter / (a1 + a2 - inter)
 
 
-def nms(dets, thr=0.5):
+def nms_manul(dets, thr=0.5):
     dets = sorted(dets, key=lambda d: d["confidence"], reverse=True)
     keep = []
     while dets:
@@ -104,13 +111,12 @@ def detect_page_A(img):
                             y2=y2 + y,
                         )
                     )
-    return nms(all_det, thr=0.5)
+    return nms_manul(all_det, thr=0.5)
 
 
 # ──────────────────────────────────────────────────────────────────────────
 #  APPROACH B – OVERLAP + CENTRE-CROP
 # ──────────────────────────────────────────────────────────────────────────
-PAD = TILE // 8  # 64 px on each side for 512-tile  ➜ 25 % extra pixels
 
 
 def detect_page_B(img):
@@ -158,6 +164,132 @@ def detect_page_B(img):
     return dets  # already unique → no NMS needed
 
 
+def detect_page_B_with_torchvision_nms(img):
+    H, W = img.shape[:2]
+    dets = []
+
+    for y0 in range(0, H, STRIDE):
+        for x0 in range(0, W, STRIDE):
+            x1 = max(x0 - PAD, 0)
+            y1 = max(y0 - PAD, 0)
+            x2 = min(x0 + TILE + PAD, W)
+            y2 = min(y0 + TILE + PAD, H)
+            patch = img[y1:y2, x1:x2]
+            offx, offy = x1, y1
+
+            for r in MODEL.predict(
+                patch,
+                conf=CONF_THR,
+                verbose=False,
+                iou=0.3,
+                agnostic_nms=True,
+            ):
+                for box in r.boxes:
+                    bx1, by1, bx2, by2 = box.xyxy[0].tolist()
+                    cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
+                    if PAD <= cx <= PAD + TILE and PAD <= cy <= PAD + TILE:
+                        dets.append(
+                            (
+                                bx1 + offx,
+                                by1 + offy,
+                                bx2 + offx,
+                                by2 + offy,
+                                box.conf[0].item(),
+                                r.names[int(box.cls)],
+                                # int(box.cls[0]),  # 类别索引
+                            )
+                        )
+
+    if not dets:
+        return []
+
+    # 转为 Tensor
+
+    boxes = torch.tensor([d[:4] for d in dets])
+    scores = torch.tensor([d[4] for d in dets])
+    # labels = [d[5] for d in dets]  # 如果你要做按类 NMS，可用
+
+    keep = nms(boxes, scores, iou_threshold=0.5)
+
+    # 返回保留的结果
+    return [
+        dict(
+            x1=dets[i][0],
+            y1=dets[i][1],
+            x2=dets[i][2],
+            y2=dets[i][3],
+            confidence=dets[i][4],
+            label=dets[i][5],
+        )
+        for i in keep
+    ]
+
+
+def detect_page_B_with_weighted_nms(img):
+    H, W = img.shape[:2]
+    dets = []
+
+    for y0 in range(0, H, STRIDE):
+        for x0 in range(0, W, STRIDE):
+            x1 = max(x0 - PAD, 0)
+            y1 = max(y0 - PAD, 0)
+            x2 = min(x0 + TILE + PAD, W)
+            y2 = min(y0 + TILE + PAD, H)
+            patch = img[y1:y2, x1:x2]
+            offx, offy = x1, y1
+
+            for r in MODEL.predict(
+                patch,
+                conf=CONF_THR,
+                verbose=False,
+                iou=0.3,
+                agnostic_nms=True,
+            ):
+                for box in r.boxes:
+                    bx1, by1, bx2, by2 = box.xyxy[0].tolist()
+                    cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
+                    if PAD <= cx <= PAD + TILE and PAD <= cy <= PAD + TILE:
+                        conf = box.conf[0].item()
+                        area = (bx2 - bx1) * (by2 - by1)
+                        weighted_score = conf * area
+                        dets.append(
+                            dict(
+                                x1=bx1 + offx,
+                                y1=by1 + offy,
+                                x2=bx2 + offx,
+                                y2=by2 + offy,
+                                confidence=conf,
+                                area=area,
+                                weighted_score=weighted_score,
+                                label=r.names[int(box.cls)],
+                                # label=int(box.cls[0]),  # 类别
+                            )
+                        )
+
+    if not dets:
+        return []
+
+    # 转换为 Tensor
+    boxes = torch.tensor([[d["x1"], d["y1"], d["x2"], d["y2"]] for d in dets])
+    scores = torch.tensor([d["weighted_score"] for d in dets])  # 用加权分数做排序
+    # labels = [d["label"] for d in dets]  # 可用于扩展类别感知 NMS
+
+    keep_indices = nms(boxes, scores, iou_threshold=0.5)
+
+    # 返回保留结果
+    return [
+        dict(
+            x1=dets[i]["x1"],
+            y1=dets[i]["y1"],
+            x2=dets[i]["x2"],
+            y2=dets[i]["y2"],
+            confidence=dets[i]["confidence"],
+            label=dets[i]["label"],
+        )
+        for i in keep_indices
+    ]
+
+
 def draw_detections(img, detections):
     for det in detections:
         x1 = int(det["x1"])
@@ -192,8 +324,9 @@ def run(pdf_path, out_path, use_overlap=False):
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
 
         if use_overlap:
-            dets = detect_page_B(img)  # Approach B
-            dets = nms(dets, thr=0.5)
+            # dets = detect_page_B(img)  # Approach B
+            # dets = nms_manul(dets, thr=0.5)
+            dets = detect_page_B_with_weighted_nms(img)
         else:
             dets = detect_page_A(img)  # Approach A
 
