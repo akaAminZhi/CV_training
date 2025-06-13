@@ -10,15 +10,13 @@ from torchvision.ops import nms
 from sklearn.cluster import DBSCAN, KMeans
 from collections import defaultdict
 from math import hypot
+import json
 
-# MODEL = YOLO("./lsbyolo11.pt")
-MODEL = YOLO("weights/lsb_receptacle_robotlow_train_v3.pt")
-# MODEL = YOLO(
-#     "runs/detect/lsb_power_plan_receptacle_roboflow_v8_yolov11_m_fine_tune_unfreeze_all/weights/best.pt"
-# )
 
-input = "TestFiles/CMSC_lenth_test3_clean.pdf"
-output = "TestFiles/CMSC_lenth_test3_with_roboflow_m_fine_tune_v1.pdf"
+MODEL = None
+YOLO_Model_Path = "weights/lsb_receptacle_robotlow_train_v3.pt"
+input = "TestFiles/CMSC_lenth_test4_clean2.pdf"
+output = "TestFiles/CMSC_lenth_test4_with_roboflow_m_fine_tune_v1.pdf"
 
 TILE = 512
 # STRIDE = 512  # = TILE for no-overlap; any ≥1 for approach B
@@ -223,7 +221,6 @@ def detect_page_B_with_weighted_nms(img):
                                 x2=bx2 + offx,
                                 y2=by2 + offy,
                                 confidence=conf,
-                                area=area,
                                 weighted_score=weighted_score,
                                 label=r.names[int(box.cls)],
                                 # label=int(box.cls[0]),  # 类别
@@ -248,6 +245,7 @@ def detect_page_B_with_weighted_nms(img):
             x2=dets[i]["x2"],
             y2=dets[i]["y2"],
             confidence=dets[i]["confidence"],
+            weighted_score=dets[i]["weighted_score"],
             label=dets[i]["label"],
         )
         for i in keep_indices
@@ -457,10 +455,19 @@ def draw_paths(
         _polyline_panel(color_panel, seg)
 
 
+def load_dets_from_json(path):
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data
+
+
 # ──────────────────────────────────────────────────────────────────────────
 #  FULL PIPELINE DRIVER
 # ──────────────────────────────────────────────────────────────────────────
-def run(pdf_path, out_path, use_overlap=False):
+def run(pdf_path, out_path, Yolo=True):
+    if Yolo:
+        global MODEL
+        MODEL = YOLO(YOLO_Model_Path)
     doc = fitz.open(pdf_path)
     det_pp = []  # list of lists (per page)
     for i, page in enumerate(doc):
@@ -468,11 +475,12 @@ def run(pdf_path, out_path, use_overlap=False):
         img = cv2.imdecode(np.frombuffer(pix.tobytes(), np.uint8), cv2.IMREAD_COLOR)
         if pix.n == 4:
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-
-        if use_overlap:
-            # dets = detect_page_B(img)  # Approach B
-            # dets = nms_manul(dets, thr=0.5)
+        if Yolo:
             dets = detect_page_B_with_weighted_nms(img)
+            with open("detectResult.json", "w") as f:
+                json.dump(dets, f, indent=4)
+        else:
+            dets = load_dets_from_json("detectResult.json")
 
         # drawback to image
         # result_img = img
@@ -483,8 +491,8 @@ def run(pdf_path, out_path, use_overlap=False):
             dets,
             capacity=8,
             eps_px=500,
-            grid_px=50,
-            merge_eps=50,
+            grid_px=10,
+            merge_eps=5,
             keep_labels=None,  # “除了 panel 都要”
             return_coords=True,  # ← 新
         )
@@ -501,27 +509,8 @@ def run(pdf_path, out_path, use_overlap=False):
         draw_paths(result_img, dev_paths, panel_paths)
         cv2.imwrite("detection_result" + str(i) + ".png", result_img)
         det_pp.append(dets)
-        dev_paths, panel_paths = [], []
-        total_dev_px, total_panel_px = 0.0, 0.0  # 以像素为单位累积
-
-        for dev_idx, jb_idx in dev2jb.items():
-            x1, y1 = dev_coords[dev_idx]  # 设备中心 (px)
-            x2, y2 = jb_centroids[jb_idx]  # JB 坐标  (px)
-
-            # 水平→垂直折线
-            dev_paths.append(((x1, y1), (x2, y1), (x2, y2)))
-            total_dev_px += abs(x2 - x1) + abs(y2 - y1)
-
-        # ──────────────────────────────────────────────
-        # ③ JB → 最近 panel 路径 & 长度
-        # ──────────────────────────────────────────────
-
-        for xj, yj in jb_centroids:
-            if not panel_centres:
-                break
-            xp, yp = min(panel_centres, key=lambda p: hypot(p[0] - xj, p[1] - yj))
-            panel_paths.append(((xj, yj), (xj, yp), (xp, yp)))
-            total_panel_px += abs(yp - yj) + abs(xp - xj)
+        total_dev_px = sum(polyline_length_px(p) for p in dev_paths)
+        total_panel_px = sum(polyline_length_px(p) for p in panel_paths)
 
         # ──────────────────────────────────────────────
         # ④ 距离换算：像素 → 米        （若你用像素坐标）
@@ -542,12 +531,4 @@ def run(pdf_path, out_path, use_overlap=False):
     # write_boxes_to_pdf(pdf_path, out_path, det_pp, dpi=300)
 
 
-# ──────────────────────────────────────────────────────────────────────────
-#  EXAMPLE CALLS
-# ──────────────────────────────────────────────────────────────────────────
-# 1. No-overlap tiling + global NMS
-# run("Test2.pdf", "annotated_NMS.pdf", use_overlap=False)
-
-# 2. Overlap tiling (64-px pad) + centre-crop
-#    You can reduce STRIDE to e.g. 448 (= TILE-2*PAD) for true sliding window.
-run(input, output, use_overlap=True)
+run(input, output, Yolo=False)
