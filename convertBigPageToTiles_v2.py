@@ -2,8 +2,8 @@
 import cv2
 import pathlib
 
-BIG_DIR = pathlib.Path("dataset/images/lsb_telcom")  # original pages
-TILE_DIR = pathlib.Path("dataset/images/lsb_telcom_tiles4")  # output tiles
+BIG_DIR = pathlib.Path("detect_images/lsb_fa")
+TILE_DIR = pathlib.Path("dataset/images/LSB_FA5_tiles")
 TILE = 512
 PAD = TILE // 8  # 64-px pad on each side  → 25 % overlap
 STRIDE = TILE - 2 * PAD  # 448 px  (perfect sliding window)
