@@ -1,10 +1,11 @@
 import cv2
 import pathlib
 
-PAGE_DIR = pathlib.Path("dataset/images/lsb_telcom")
+PAGE_DIR = pathlib.Path("detect_images/lsb_fa")
 # YOLO will read these
-TILE_DIR = pathlib.Path("dataset/images/lsb_telcom_tiles2")
-SIZE, STRIDE = 512, 512  # no overlap; tweak as needed
+TILE_DIR = pathlib.Path("dataset/images/LSB_FA0_test_tiles")
+# SIZE, STRIDE = 512, 512  # no overlap; tweak as needed
+SIZE, STRIDE = 640, 640  # no overlap; tweak as needed
 
 TILE_DIR.mkdir(parents=True, exist_ok=True)
 for page in PAGE_DIR.glob("*.png"):
