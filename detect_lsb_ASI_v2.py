@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 
 MODEL = None
 MODEL2 = None
-YOLO_Model_Path = "weights/lsb_fa_asi_cloud_large_v5.pt"
+YOLO_Model_Path = "weights/lsb_fa_asi_cloud_large_v6.pt"
 YOLO_Model_Path2 = "weights/lsb_fa_large_v11.pt"
 file_name = "TestFiles/lsb_fa/new_ASI/28 - Fire Alarm"
 file_name2 = "TestFiles/lsb_fa/old_ASI/28 - Fire Alarm_asi_old"
