@@ -16,8 +16,8 @@ from typing import Dict, List, Optional
 
 MODEL = None
 MODEL2 = None
-YOLO_Model_Path = "weights/lsb_fa_asi_cloud_large_v6.pt"
-YOLO_Model_Path2 = "weights/lsb_fa_large_v11.pt"
+YOLO_Model_Path = "weights/lsb_fa_asi_cloud_large_v7.pt"
+YOLO_Model_Path2 = "weights/lsb_fa_yolo26_large_v2.pt"
 file_name = "TestFiles/lsb_fa/new_ASI/28 - Fire Alarm"
 file_name2 = "TestFiles/lsb_fa/old_ASI/28 - Fire Alarm_asi_old"
 
@@ -34,7 +34,7 @@ TILE = 1024
 PAD = TILE // 4  # 64 px on each side for 512-tile  ➜ 25 % extra pixels
 STRIDE = TILE - 2 * PAD  # 448 px  (perfect sliding window)
 
-CONF_THR = 0.3
+CONF_THR = 0.35
 
 
 def _pdf_escape_paren(s: str) -> str:
@@ -550,7 +550,7 @@ def detect_page_B_with_weighted_nms(img, model):
 
             for r in model.predict(
                 patch,
-                conf=0.8,
+                conf=0.5,
                 verbose=False,
                 # classes=[9],
                 # iou=0.3,
@@ -653,7 +653,7 @@ def detect_result_with_cloud(img, model, results):
             if len(r.boxes) == 0:
                 for r in model.predict(
                     patch,
-                    conf=0.2,
+                    conf=0.01,
                     verbose=False,
                     # classes=[9],
                     iou=0.9,
