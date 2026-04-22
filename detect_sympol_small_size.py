@@ -8,38 +8,34 @@ from ultralytics import YOLO
 import torch
 from torchvision.ops import nms
 import json
-
+import math
 
 MODEL = None
-YOLO_Model_Path = "weights/lsb_fa_large_v3.pt"
-file_name = "TestFiles/lsb_fa/28 - Fire Alarm"
+YOLO_Model_Path = "weights/lsb_receptacle_yolo26_large_v5.pt"
+file_name = "TestFiles/lsb_recep/l_6_A"
 input = f"{file_name}.pdf"
-output = f"{file_name}_result2.pdf"
+output = f"{file_name}_result.pdf"
 
 TILE = 512
-
+total_count = 0
 PAD = TILE // 4  # 64 px on each side for 512-tile  ➜ 25 % extra pixels
 STRIDE = TILE - 2 * PAD  # 448 px  (perfect sliding window)
 CONF_THR = 0.6
 
-# ===== 配色（高亮对比，灰底可见，16 色循环） =====
+
 OKABE_ITO = [
-    (0.05, 0.55, 0.95),  # bright blue
-    (0.98, 0.55, 0.15),  # orange
-    (0.00, 0.80, 0.55),  # teal
-    (0.90, 0.25, 0.75),  # magenta
-    (0.98, 0.90, 0.25),  # yellow
-    (0.95, 0.35, 0.25),  # coral
-    (0.40, 0.75, 1.00),  # sky
-    (0.35, 0.90, 0.35),  # lime
-    (1.00, 0.45, 0.65),  # pink
-    (0.20, 0.55, 1.00),  # cobalt
-    (1.00, 0.75, 0.30),  # amber
-    (0.60, 0.35, 0.90),  # violet
-    (0.15, 0.80, 0.90),  # aqua
-    (0.90, 0.50, 0.40),  # salmon
-    (0.80, 0.80, 0.10),  # chartreuse
-    (0.55, 0.60, 0.95),  # periwinkle
+    (0.85, 0.10, 0.10),  # red
+    (0.00, 0.00, 0.00),  # black
+    (0.00, 0.55, 0.20),  # green
+    (0.00, 0.35, 0.85),  # blue
+    (0.90, 0.50, 0.00),  # orange
+    (0.55, 0.20, 0.70),  # purple
+    (0.55, 0.30, 0.10),  # brown
+    (0.00, 0.65, 0.65),  # teal
+    (0.95, 0.20, 0.55),  # pink
+    (0.75, 0.75, 0.00),  # mustard
+    (0.10, 0.70, 0.90),  # cyan
+    (0.60, 0.00, 0.40),  # magenta wine
 ]
 
 
@@ -51,50 +47,29 @@ def rebuild_and_save(doc, out_path):
     newdoc.close()
 
 
-# def write_boxes_to_pdf_old(pdf_path, out_path, detections_pp, dpi=144):
-#     doc = fitz.open(pdf_path)
-#     objects = {}
-#     for i, page in enumerate(doc):
-#         zoom = dpi / 72
-#         # page.set_rotation(0)
-#         mat = fitz.Matrix(zoom, zoom).prerotate(
-#             page.rotation
-#         )  # 1️⃣ like get_pixmap  PDF->png
+def img_point_to_page_point(
+    page: fitz.Page, px: float, py: float, dpi: int = 144
+) -> fitz.Point:
+    """
+    把 get_pixmap(dpi=...) 得到的图像像素坐标，转换回 page 的原始 PDF 坐标。
+    适用于 page.rotation = 0/90/180/270。
+    """
+    zoom = dpi / 72.0
 
-#         imat = fitz.Matrix(mat)
-#         imat.invert()  # 2️⃣ invert matrix png->PDF
-#         for det in detections_pp[i]:
-#             # p1 = fitz.Point(det["x1"], det["y1"]) * imat
-#             # p2 = fitz.Point(det["x2"], det["y2"]) * imat
-#             # rect = fitz.Rect(p1, p2)
-#             has_this_object = objects.get(det["label"])
-#             if has_this_object:
-#                 objects[det["label"]] = objects[det["label"]] + 1
-#             else:
-#                 objects[det["label"]] = 1
-#             p1 = fitz.Point(det["x1"], det["y1"]) * imat
-#             p2 = fitz.Point(det["x2"], det["y2"]) * imat
-#             rect = fitz.Rect(p1, p2).normalize()
+    # 1) 像素坐标 -> 旋转后的 page 坐标
+    p_rot = fitz.Point(px / zoom, py / zoom)
 
-#             # skip zero-area boxes
-#             if rect.width == 0 or rect.height == 0:
-#                 continue
-#             annot = page.add_rect_annot(rect)
+    # 2) 旋转后的 page 坐标 -> 原始 page 坐标
+    p_pdf = p_rot * page.derotation_matrix
+    return p_pdf
 
-#             # Set the subject of the annotation
-#             annot.set_info(subject=f"{det['label']}")
-#             annot.set_colors(stroke=(1, 0, 0))  # 红色边框
-#             annot.set_border(width=1)  # 边框宽度
-#             annot.update()
 
-#     sorted_dict = {key: objects[key] for key in sorted(objects)}
-#     for key, value in sorted_dict.items():
-#         print(f"{key}: {value}")
-
-#     rebuild_and_save(doc, out_path)
-#     doc.close()
-
-#     print("✅ Saved:", out_path)
+def img_rect_to_page_rect(
+    page: fitz.Page, x1: float, y1: float, x2: float, y2: float, dpi: int = 144
+) -> fitz.Rect:
+    p1 = img_point_to_page_point(page, x1, y1, dpi)
+    p2 = img_point_to_page_point(page, x2, y2, dpi)
+    return fitz.Rect(p1, p2).normalize()
 
 
 def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=144, palette=OKABE_ITO):
@@ -112,80 +87,24 @@ def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=144, palette=OKABE
         return palette[idx]
 
     for i, page in enumerate(doc):
-        zoom = dpi / 72
-        mat = fitz.Matrix(zoom, zoom).prerotate(page.rotation)
-        imat = fitz.Matrix(mat)
-        imat.invert()
 
         for det in detections_pp[i]:
             label = det["label"]
             objects[label] = objects.get(label, 0) + 1
 
-            p1 = fitz.Point(det["x1"], det["y1"]) * imat
-            p2 = fitz.Point(det["x2"], det["y2"]) * imat
-            rect = fitz.Rect(p1, p2).normalize()
+            rect = img_rect_to_page_rect(
+                page, det["x1"], det["y1"], det["x2"], det["y2"], dpi=dpi
+            )
+            if rect.width <= 0 or rect.height <= 0:
+                continue
             if rect.width == 0 or rect.height == 0:
                 continue
 
             annot = page.add_rect_annot(rect)
-            annot.set_info(subject=str(label))
+            annot.set_info(
+                subject=str(label), content=f"confidence: {det['confidence']:.2f}"
+            )
             annot.set_colors(stroke=get_color_for_label(label))
-            annot.set_border(width=1)
-            annot.update()
-
-    sorted_dict = {key: objects[key] for key in sorted(objects)}
-    for key, value in sorted_dict.items():
-        print(f"{key}: {value}")
-
-    rebuild_and_save(doc, out_path)
-    doc.close()
-    print("✅ Saved:", out_path)
-
-
-def write_boxes_to_pdf(pdf_path, out_path, detections_pp, dpi=144, palette=OKABE_ITO):
-    import fitz
-
-    doc = fitz.open(pdf_path)
-    objects = {}
-
-    # label -> color 映射（同一个label永远用同一个颜色）
-    label_to_color = {}
-    palette_n = len(palette)
-
-    def get_color_for_label(label: str):
-        # 已分配过就直接返回
-        if label in label_to_color:
-            return label_to_color[label]
-        # 用“出现顺序”分配颜色，并循环使用 palette
-        color = palette[len(label_to_color) % palette_n]
-        label_to_color[label] = color
-        return color
-
-    for i, page in enumerate(doc):
-        zoom = dpi / 72
-        mat = fitz.Matrix(zoom, zoom).prerotate(page.rotation)
-        imat = fitz.Matrix(mat)
-        imat.invert()
-
-        for det in detections_pp[i]:
-            label = det["label"]
-
-            objects[label] = objects.get(label, 0) + 1
-
-            p1 = fitz.Point(det["x1"], det["y1"]) * imat
-            p2 = fitz.Point(det["x2"], det["y2"]) * imat
-            rect = fitz.Rect(p1, p2).normalize()
-
-            # skip zero-area boxes
-            if rect.width == 0 or rect.height == 0:
-                continue
-
-            annot = page.add_rect_annot(rect)
-            annot.set_info(subject=str(label))
-
-            stroke_color = get_color_for_label(label)  # (r,g,b) in 0..1
-            annot.set_colors(stroke=stroke_color)
-
             annot.set_border(width=1)
             annot.update()
 
@@ -210,7 +129,7 @@ def _img_to_pdf_matrices(page, *, dpi=144):
 def detect_page_B_with_weighted_nms(img):
     H, W = img.shape[:2]
     dets = []
-
+    global total_count
     for y0 in range(0, H, STRIDE):
         for x0 in range(0, W, STRIDE):
             x1 = max(x0 - PAD, 0)
@@ -247,6 +166,19 @@ def detect_page_B_with_weighted_nms(img):
                                 # label=int(box.cls[0]),  # 类别
                             )
                         )
+                        # if r.names[int(box.cls)] == "changed":
+                        #     x1 = math.ceil(bx1 + offx)
+                        #     y1 = math.ceil(by1 + offy)
+                        #     x2 = math.ceil(bx2 + offx)
+                        #     y2 = math.ceil(by2 + offy)
+                        #     patch = img[y1:y2, x1:x2]
+                        #     cv2.imwrite(
+                        #         "detect_images/lsb_fa_test/lsb_fa_changed"
+                        #         + str(total_count)
+                        #         + ".png",
+                        #         patch,
+                        #     )
+                        #     total_count += 1
 
     if not dets:
         return []
@@ -325,7 +257,7 @@ def run(pdf_path, out_path, Yolo=True):
     doc = fitz.open(pdf_path)
     det_pp = []  # list of lists (per page)
     for i, page in enumerate(doc):
-        pix = page.get_pixmap(dpi=144)
+        pix = page.get_pixmap(dpi=300)
         img = cv2.imdecode(np.frombuffer(pix.tobytes(), np.uint8), cv2.IMREAD_COLOR)
         if pix.n == 4:
             img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
@@ -344,7 +276,7 @@ def run(pdf_path, out_path, Yolo=True):
     # doc.save(out_path, garbage=4, deflate=True)
 
     doc.close()  # we reopen in writer
-    write_boxes_to_pdf(pdf_path, out_path, det_pp, dpi=144)
+    write_boxes_to_pdf(pdf_path, out_path, det_pp, dpi=300)
 
 
 run(input, output, Yolo=True)
