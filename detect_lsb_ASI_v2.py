@@ -18,7 +18,7 @@ MODEL = None
 MODEL2 = None
 YOLO_Model_Path = "weights/lsb_fa_asi_cloud_large_v7.pt"
 YOLO_Model_Path2 = "weights/lsb_fa_yolo26_large_v2.pt"
-file_name = "TestFiles/lsb_fa/new_ASI/28 - Fire Alarm"
+file_name = "TestFiles/lsb_fa/new_ASI/28 - Fire Alarm_asi009"
 file_name2 = "TestFiles/lsb_fa/old_ASI/28 - Fire Alarm_asi_old"
 
 input = f"{file_name}.pdf"
@@ -35,6 +35,7 @@ PAD = TILE // 4  # 64 px on each side for 512-tile  ➜ 25 % extra pixels
 STRIDE = TILE - 2 * PAD  # 448 px  (perfect sliding window)
 
 CONF_THR = 0.35
+CONF_THR_CLOUD = 0.5
 
 
 def _pdf_escape_paren(s: str) -> str:
@@ -550,7 +551,7 @@ def detect_page_B_with_weighted_nms(img, model):
 
             for r in model.predict(
                 patch,
-                conf=0.5,
+                conf=CONF_THR_CLOUD,
                 verbose=False,
                 # classes=[9],
                 # iou=0.3,
@@ -751,7 +752,7 @@ def check_file_rotation_and_recover(pdf_input, pdf_output):
 # ──────────────────────────────────────────────────────────────────────────
 #  FULL PIPELINE DRIVER
 # ──────────────────────────────────────────────────────────────────────────
-def run(pdf_path, input_privious_asi, out_path, output2, Yolo=True):
+def run(pdf_path, input_privious_asi, out_path, dpi, Yolo=True):
     if Yolo:
         global MODEL
         global MODEL2
@@ -763,8 +764,8 @@ def run(pdf_path, input_privious_asi, out_path, output2, Yolo=True):
     det_pp = []  # list of lists (per page)
     det_pp_privious_asi = []
     for i, page in enumerate(doc):
-        pix = page.get_pixmap(dpi=144)
-        pix_privious_ais = doc_privious_ais[i].get_pixmap(dpi=144)
+        pix = page.get_pixmap(dpi=dpi)
+        pix_privious_ais = doc_privious_ais[i].get_pixmap(dpi=dpi)
         img = cv2.imdecode(np.frombuffer(pix.tobytes(), np.uint8), cv2.IMREAD_COLOR)
         img_privious_asi = cv2.imdecode(
             np.frombuffer(pix_privious_ais.tobytes(), np.uint8), cv2.IMREAD_COLOR
@@ -799,7 +800,7 @@ def run(pdf_path, input_privious_asi, out_path, output2, Yolo=True):
     doc.close()  # we reopen in writer
     # write_boxes_to_pdf(pdf_path, out_path, det_pp, dpi=144)
     # write_boxes_to_pdf(input_privious_asi, output2, det_pp_privious_asi, dpi=144)
-    write_both_boxes_to_pdf(pdf_path, out_path, det_pp, det_pp_privious_asi, dpi=144)
+    write_both_boxes_to_pdf(pdf_path, out_path, det_pp, det_pp_privious_asi, dpi=dpi)
 
 
-run(input, input_privious_asi, out_path=output, output2=output2, Yolo=True)
+run(input, input_privious_asi, out_path=output, dpi=300, Yolo=True)
